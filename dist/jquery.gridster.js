@@ -713,6 +713,7 @@
         min_cols: 1,
         min_rows: 15,
         max_size_x: 6,
+        ie8compat: false,
         autogenerate_stylesheet: true,
         avoid_overlapped_widgets: true,
         serialize_params: function($w, wgd) {
@@ -2008,6 +2009,12 @@
             'data-row' : row,
             'data-col' : col
         });
+        
+        
+        if (this.options.ie8compat)
+        {
+            $this.preview_holder.toggle("ie8compat");
+        }
 
         if (moved_down || changed_column) {
             $nexts.each($.proxy(function(i, widget) {
@@ -2382,8 +2389,12 @@
                 widget_grid_data.row = next_row;
                 this.add_to_gridmap(widget_grid_data);
                 $widget.attr('data-row', widget_grid_data.row);
+                
+                if (this.options.ie8compat)
+                {
+                    $widget.toggle("ie8compat");
+                }
                 this.$changed = this.$changed.add($widget);
-
                 moved.push($widget);
 
                 $next_widgets.each($.proxy(function(i, widget) {
@@ -2434,6 +2445,10 @@
             widget_grid_data.row = next_row;
             this.update_widget_position(widget_grid_data, $widget);
             $widget.attr('data-row', widget_grid_data.row);
+            if (this.options.ie8compat)
+            {
+                $widget.toggle("ie8compat");
+            }
             this.$changed = this.$changed.add($widget);
 
             moved.push($widget);
