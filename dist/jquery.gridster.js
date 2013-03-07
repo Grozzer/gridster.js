@@ -713,7 +713,8 @@
         min_cols: 1,
         min_rows: 15,
         max_size_x: 6,
-        ie8compat: false,
+        add_columns_on_resize: false,
+        ie8compatmode : false,
         autogenerate_stylesheet: true,
         avoid_overlapped_widgets: true,
         serialize_params: function($w, wgd) {
@@ -801,6 +802,7 @@
         this.get_widgets_from_DOM();
         this.set_dom_grid_height();
         this.$wrapper.addClass('ready');
+
         this.draggable();
 
         $(window).bind(
@@ -876,6 +878,16 @@
         this.add_faux_rows(pos.size_y);
         //this.add_faux_cols(pos.size_x);
 
+        //Added option to regenerate stylesheet if we need more rows
+        if (this.options.autogenerate_stylesheet)
+        {
+            var r = this.get_highest_occupied_cell().row;
+            if (r > this.rows) {
+                this.rows = r;
+                this.generate_stylesheet();
+            }
+        }
+
         this.set_dom_grid_height();
 
         return $w.fadeIn();
@@ -902,11 +914,13 @@
             size_x = this.cols;
         }
 
-        var old_cells_occupied = this.get_cells_occupied(wgd);
+        var old_cells_occupied = this.get_cells_occupied(wgd); //The cells the widget used to occupy
         var old_size_x = wgd.size_x;
         var old_size_y = wgd.size_y;
         var old_col = wgd.col;
+        var old_row = wgd.row;
         var new_col = old_col;
+        var new_row = old_row;
         var wider = size_x > old_size_x;
         var taller = size_y > old_size_y;
 
@@ -916,60 +930,79 @@
             new_col = Math.max(1, c);
         }
 
+        //Need to calculate new row here
+        var canFit = true;
+        var rowTest = old_row - 1;
+        
+        while (canFit && rowTest > 0) {
+            canFit = this.can_move_to({ size_x: size_x, size_y: 1 }, new_col, rowTest); //size_y should be 1 so the widget doesn't conflict with itself   
+            if (canFit)
+            {
+                new_row = rowTest;
+            }
+            rowTest--;
+        }
+            
         var new_grid_data = {
             col: new_col,
-            row: wgd.row,
+            row: new_row,
             size_x: size_x,
             size_y: size_y
         };
 
-        var new_cells_occupied = this.get_cells_occupied(new_grid_data);
+        var new_cells_occupied = this.get_cells_occupied(new_grid_data); //The cells this now occupies
 
-        var empty_cols = [];
+        var empty_cols = []; //The columns this is going to leave empty - if retracting
         $.each(old_cells_occupied.cols, function(i, col) {
             if ($.inArray(col, new_cells_occupied.cols) === -1) {
                 empty_cols.push(col);
             }
         });
 
-        var occupied_cols = [];
+        var occupied_cols = []; //The columns this is going to now occupy - if increasing
         $.each(new_cells_occupied.cols, function(i, col) {
             if ($.inArray(col, old_cells_occupied.cols) === -1) {
                 occupied_cols.push(col);
             }
         });
 
-        var empty_rows = [];
+        var empty_rows = []; //The rows this is going to leave empty - if retracting
         $.each(old_cells_occupied.rows, function(i, row) {
             if ($.inArray(row, new_cells_occupied.rows) === -1) {
                 empty_rows.push(row);
             }
         });
 
-        var occupied_rows = [];
+        var occupied_rows = []; //The rows this is going to now occupy - if increasing
         $.each(new_cells_occupied.rows, function(i, row) {
             if ($.inArray(row, old_cells_occupied.rows) === -1) {
                 occupied_rows.push(row);
             }
         });
 
-        this.remove_from_gridmap(wgd);
+        this.remove_from_gridmap(wgd); //Remove our old widget from the gridmap
 
         if (occupied_cols.length) {
             var cols_to_empty = [
-                new_col, wgd.row, size_x, Math.min(old_size_y, size_y), $widget
+                new_col, new_row, size_x, Math.min(old_size_y, size_y), $widget
             ];
             this.empty_cells.apply(this, cols_to_empty);
         }
 
         if (occupied_rows.length) {
-            var rows_to_empty = [new_col, wgd.row, size_x, size_y, $widget];
+            var rows_to_empty = [new_col, new_row, size_x, size_y, $widget];
             this.empty_cells.apply(this, rows_to_empty);
         }
 
         wgd.col = new_col;
+        wgd.row = new_row;
         wgd.size_x = size_x;
         wgd.size_y = size_y;
+        
+        if (size_y > old_size_y) {
+            this.add_faux_rows(size_y - old_size_y);
+        }
+
         this.add_to_gridmap(new_grid_data, $widget);
 
         //update coords instance attributes
@@ -980,20 +1013,25 @@
                 ((size_y - 1) * this.options.widget_margins[1]) * 2)
         });
 
-        if (size_y > old_size_y) {
+        /*if (size_y > old_size_y) {
             this.add_faux_rows(size_y - old_size_y);
-        }
+        }*/
 
-        if (size_x > old_size_x) {
-            this.add_faux_cols(size_x - old_size_x);
+        if (this.options.add_columns_on_resize) {
+            //Added boolean check as we don't want it adding columns by default
+            if (size_x > old_size_x) {
+                this.add_faux_cols(size_x - old_size_x);
+            }
         }
 
         $widget.attr({
             'data-col': new_col,
+            'data-row' : new_row,
             'data-sizex': size_x,
             'data-sizey': size_y
         });
 
+        //We have columns that need filling
         if (empty_cols.length) {
             var cols_to_remove_holes = [
                 empty_cols[0], wgd.row,
@@ -1005,6 +1043,7 @@
             this.remove_empty_cells.apply(this, cols_to_remove_holes);
         }
 
+        //We have rows that need filling
         if (empty_rows.length) {
             var rows_to_remove_holes = [
                 new_col, wgd.row, size_x, size_y, $widget
@@ -1012,6 +1051,8 @@
             this.remove_empty_cells.apply(this, rows_to_remove_holes);
         }
 
+        this.recalculate_faux_grid();
+        this.set_dom_grid_height(); //This should hopefully stop the height being set incorrectly!
         return $widget;
     };
 
@@ -2010,10 +2051,8 @@
             'data-col' : col
         });
         
-        
-        if (this.options.ie8compat)
-        {
-            $this.preview_holder.toggle("ie8compat");
+        if (this.options.ie8compatmode) {
+            this.$preview_holder.toggleClass("ie8compat");
         }
 
         if (moved_down || changed_column) {
@@ -2389,12 +2428,12 @@
                 widget_grid_data.row = next_row;
                 this.add_to_gridmap(widget_grid_data);
                 $widget.attr('data-row', widget_grid_data.row);
-                
-                if (this.options.ie8compat)
-                {
-                    $widget.toggle("ie8compat");
-                }
                 this.$changed = this.$changed.add($widget);
+
+                if (this.options.ie8compatmode) {
+                    $widget.toggleClass("ie8compat");
+                }
+
                 moved.push($widget);
 
                 $next_widgets.each($.proxy(function(i, widget) {
@@ -2445,10 +2484,11 @@
             widget_grid_data.row = next_row;
             this.update_widget_position(widget_grid_data, $widget);
             $widget.attr('data-row', widget_grid_data.row);
-            if (this.options.ie8compat)
-            {
-                $widget.toggle("ie8compat");
+            
+            if (this.options.ie8compatmode) {
+                $widget.toggleClass("ie8compat");
             }
+
             this.$changed = this.$changed.add($widget);
 
             moved.push($widget);
@@ -2901,7 +2941,6 @@
                 }
             }
         }
-
         var highest_row = Math.max.apply(Math, rows);
 
         this.highest_occupied_cell = {
@@ -2945,9 +2984,10 @@
     * @method set_dom_grid_height
     * @return {Object} Returns the instance of the Gridster class.
     */
-    fn.set_dom_grid_height = function() {
+    fn.set_dom_grid_height = function () {
         var r = this.get_highest_occupied_cell().row;
         this.$el.css('height', r * this.min_widget_height);
+
         return this;
     };
 
@@ -2960,7 +3000,8 @@
     * @param {Number} cols Number of rows.
     * @return {Object} Returns the instance of the Gridster class.
     */
-    fn.generate_stylesheet = function(opts) {
+    fn.generate_stylesheet = function (opts) {
+
         var styles = '';
         var max_size_x = this.options.max_size_x;
         var max_rows = 0;
@@ -3092,7 +3133,9 @@
             this.gridmap[col] = [];
         }
 
-        this.gridmap[col][row] = false;
+        if (this.gridmap[col][row] == null) {
+            this.gridmap[col][row] = false; //Do not set everything to false otherwise the grid loses widgets
+        }
         this.faux_grid.push(coords);
 
         return this;
